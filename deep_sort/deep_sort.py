@@ -1,18 +1,19 @@
-import numpy as np
-import torch
 import sys
-import gdown
 from os.path import exists as file_exists, join
 
-from .sort.nn_matching import NearestNeighborDistanceMetric
-from .sort.detection import Detection
-from .sort.tracker import Tracker
+import cv2
+import gdown
+import numpy as np
+import torch
+
 from .deep.reid_model_factory import show_downloadeable_models, get_model_link, is_model_in_factory, \
     is_model_type_in_model_path, get_model_type, show_supported_models
+from .sort.detection import Detection
+from .sort.nn_matching import NearestNeighborDistanceMetric
+from .sort.tracker import Tracker
 
 sys.path.append('deep_sort/deep/reid')
 from torchreid.utils import FeatureExtractor
-from torchreid.utils.tools import download_url
 
 show_downloadeable_models()
 
@@ -20,7 +21,10 @@ __all__ = ['DeepSort']
 
 
 class DeepSort(object):
-    def __init__(self, model, device, max_dist=0.2, max_iou_distance=0.7, max_age=70, n_init=3, nn_budget=100):
+    def __init__(self, model, device, total_window_size, max_dist=0.2, max_iou_distance=0.7, max_age=70, n_init=3,
+                 nn_budget=100, width=72, height=72, use_larger_box=False, larger_box_coef=1.0):
+        self.crop_width, self.crop_height, self.use_larger_box, self.larger_box_coef = width, height, use_larger_box, larger_box_coef
+
         # models trained on: market1501, dukemtmcreid and msmt17
         if is_model_in_factory(model):
             # download the model
@@ -51,7 +55,7 @@ class DeepSort(object):
         metric = NearestNeighborDistanceMetric(
             "euclidean", max_cosine_distance, nn_budget)
         self.tracker = Tracker(
-            metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
+            total_window_size, metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
 
     def update(self, bbox_xywh, confidences, classes, ori_img, use_yolo_preds=False):
         self.height, self.width = ori_img.shape[:2]
@@ -61,10 +65,6 @@ class DeepSort(object):
         detections = [Detection(bbox_tlwh[i], conf, features[i]) for i, conf in enumerate(
             confidences)]
 
-        # run on non-maximum supression
-        boxes = np.array([d.tlwh for d in detections])
-        scores = np.array([d.confidence for d in detections])
-
         # update tracker
         self.tracker.predict()
         self.tracker.update(detections, classes)
@@ -72,7 +72,7 @@ class DeepSort(object):
         # output bbox identities
         outputs = []
         for track in self.tracker.tracks:
-            if not track.is_confirmed() or track.time_since_update > 1:
+            if track.time_since_update > 1:
                 continue
             if use_yolo_preds:
                 det = track.get_yolo_pred()
@@ -82,9 +82,21 @@ class DeepSort(object):
                 x1, y1, x2, y2 = self._tlwh_to_xyxy(box)
             track_id = track.track_id
             class_id = track.class_id
-            outputs.append(np.array([x1, y1, x2, y2, track_id, class_id], dtype=np.int))
-        if len(outputs) > 0:
-            outputs = np.stack(outputs, axis=0)
+
+            face_box_coor = list(self._xyxy_to_tlwh([x1, y1, x2, y2]))
+            if self.use_larger_box:
+                face_box_coor[0] = max(0, face_box_coor[0] - (self.larger_box_coef - 1.0) / 2 * face_box_coor[2])
+                face_box_coor[1] = max(0, face_box_coor[1] - (self.larger_box_coef - 1.0) / 2 * face_box_coor[3])
+                face_box_coor[2] = self.larger_box_coef * face_box_coor[2]
+                face_box_coor[3] = self.larger_box_coef * face_box_coor[3]
+            face_box_coor = self._tlwh_to_xyxy(face_box_coor)
+
+            face_region = cv2.resize(ori_img[face_box_coor[1]:face_box_coor[3], face_box_coor[0]:face_box_coor[2]],
+                                     (self.crop_width, self.crop_height), interpolation=cv2.INTER_AREA)
+            face_region = cv2.cvtColor(face_region, cv2.COLOR_BGR2RGB)
+            track.images.append(face_region)
+
+            outputs.append([np.array([x1, y1, x2, y2, track_id, class_id], dtype=np.int), track.conf, track.images])
         return outputs
 
     """
@@ -92,6 +104,7 @@ class DeepSort(object):
         Convert bbox from xc_yc_w_h to xtl_ytl_w_h
     Thanks JieChen91@github.com for reporting this bug!
     """
+
     @staticmethod
     def _xywh_to_tlwh(bbox_xywh):
         if isinstance(bbox_xywh, np.ndarray):
@@ -118,9 +131,9 @@ class DeepSort(object):
         """
         x, y, w, h = bbox_tlwh
         x1 = max(int(x), 0)
-        x2 = min(int(x+w), self.width - 1)
+        x2 = min(int(x + w), self.width - 1)
         y1 = max(int(y), 0)
-        y2 = min(int(y+h), self.height - 1)
+        y2 = min(int(y + h), self.height - 1)
         return x1, y1, x2, y2
 
     def increment_ages(self):

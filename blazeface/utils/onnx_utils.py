@@ -1,18 +1,22 @@
 from pathlib import Path
 
+import torch
 import onnx
 import onnxruntime
 
 
-def select_device(device=''):
+def select_device(device='', is_onnx = True):
     # device = 'cpu' or 'gpu'
-    assert device.lower() in ['cpu', 'gpu'], f'ERROR: {device} not a legal value'
-    providers = ['CPUExecutionProvider']
+    assert device.lower() in ['cpu', 'cuda'], f'ERROR: {device} not a legal value'
     cpu = device.lower() == 'cpu'
-    if not cpu and 'CUDAExecutionProvider' in onnxruntime.get_available_providers() and onnxruntime.get_device().lower() == device.lower():
-        providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
-    return providers
-
+    if is_onnx:
+        providers = ['CPUExecutionProvider']
+        if not cpu and 'CUDAExecutionProvider' in onnxruntime.get_available_providers() and onnxruntime.get_device().lower() == device.lower():
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        return providers
+    else:
+        cuda = not cpu and torch.cuda.is_available()
+        return torch.device('cuda:0' if cuda else 'cpu')
 
 def check_file(file):
     file = Path(str(file).strip().replace("'", '').lower())

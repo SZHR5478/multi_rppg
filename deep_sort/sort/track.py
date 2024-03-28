@@ -1,4 +1,5 @@
 # vim: expandtab:ts=4:sw=4
+from collections import deque
 
 
 class TrackState:
@@ -63,8 +64,8 @@ class Track:
 
     """
 
-    def __init__(self, mean, covariance, track_id, class_id, n_init, max_age,
-                 feature=None):
+    def __init__(self, total_window_size, mean, covariance, track_id, class_id, n_init, max_age, conf,
+                 feature=None, image=None):
         self.mean = mean
         self.covariance = covariance
         self.track_id = track_id
@@ -75,10 +76,13 @@ class Track:
         self.yolo_bbox = [0, 0, 0, 0]
 
         self.state = TrackState.Tentative
+        self.conf = conf
         self.features = []
+        self.images = deque(maxlen=total_window_size)
         if feature is not None:
             self.features.append(feature)
-
+        if image is not None:
+            self.images.append(image)
         self._n_init = n_init
         self._max_age = max_age
 
@@ -152,6 +156,7 @@ class Track:
 
         """
         self.yolo_bbox = detection
+        self.conf = detection.confidence
         self.mean, self.covariance = kf.update(
             self.mean, self.covariance, detection.to_xyah())
         self.features.append(detection.feature)
