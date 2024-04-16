@@ -96,7 +96,7 @@ class DeepSort(object):
             face_region = cv2.cvtColor(face_region, cv2.COLOR_BGR2RGB)
             track.images.append(face_region)
 
-            outputs.append([np.array([x1, y1, x2, y2, track_id, class_id], dtype=np.int), track.conf, track.images])
+            outputs.append([np.array([x1, y1, x2, y2, track_id, class_id], dtype='int'), track.conf, track.images])
         return outputs
 
     """
