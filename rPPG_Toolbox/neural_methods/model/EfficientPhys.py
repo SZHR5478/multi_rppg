@@ -13,18 +13,17 @@ def preprocess(frames):
     Returns:
         frame(np.array): processed video data by frames
     """
-    frames = np.asarray(frames)  # Video data
+    # frames = np.asarray(frames)  # Video data
     frames = standardized_data(frames)
-    frame = np.transpose(frames, (0, 3, 1, 2))
-    frame = np.float32(frame)
-    return frame
+    frames = frames.permute(0, 3, 1, 2)
+    return frames
 
 
 def standardized_data(data):
     """Z-score standardization for video data."""
-    data = data - np.mean(data)
-    data = data / np.std(data)
-    data[np.isnan(data)] = 0
+    data = data - data.mean()
+    data = data / data.std()
+    data[torch.isnan(data)] = 0
     return data
 
 
@@ -158,10 +157,10 @@ class EfficientPhys(nn.Module):
 
     def predict(self, frames):
         """Calculate rPPG HR."""
-        frames = preprocess(frames)
+        frames = preprocess(torch.tensor(np.array(frames), dtype=torch.float, device=self.device))
         frames = frames[-(len(frames) // self.frame_depth * self.frame_depth):]
-        frames = np.concatenate([frames, frames[-1:, :, :, :]], axis=0)
-        frames = torch.from_numpy(frames).contiguous().to(self.device)
+        frames = torch.concatenate([frames, frames[-1:, :, :, :]], axis=0).contiguous()
+        # frames = torch.from_numpy(frames).contiguous().to(self.device)
         with torch.no_grad():
             predictions = self(frames)
         predictions = np.squeeze(predictions.cpu().numpy())
