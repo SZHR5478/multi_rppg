@@ -1,0 +1,13 @@
+torch
+torchvision
+torchaudio
+opencv-python
+onnx
+onnxruntime
+
+#deepsort
+gdown
+scipy
+tensorboard
+PyYAML
+easydict
