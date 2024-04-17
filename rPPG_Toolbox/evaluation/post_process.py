@@ -1,7 +1,10 @@
 import numpy as np
+import torch
 import scipy
 from scipy.signal import butter
-from scipy.sparse import spdiags
+
+
+# from scipy.sparse import spdiags
 
 def _next_power_of_2(x):
     """Calculate the nearest power of 2."""
@@ -10,18 +13,19 @@ def _next_power_of_2(x):
 
 def _detrend(input_signal, lambda_value):
     """Detrend PPG signal."""
+    source_device = input_signal.device
     signal_length = input_signal.shape[0]
     # observation matrix
-    H = np.identity(signal_length)
-    ones = np.ones(signal_length)
-    minus_twos = -2 * np.ones(signal_length)
-    diags_data = np.array([ones, minus_twos, ones])
-    diags_index = np.array([0, 1, 2])
-    D = spdiags(diags_data, diags_index,
-                (signal_length - 2), signal_length).toarray()
-    detrended_signal = np.dot(
-        (H - np.linalg.inv(H + (lambda_value ** 2) * np.dot(D.T, D))), input_signal)
-    return detrended_signal
+    H = torch.eye(signal_length, device=source_device)
+    ones = torch.ones(signal_length)
+    minus_twos = -2 * ones
+    diags_data = torch.stack([ones, minus_twos, ones])
+    diags_index = torch.tensor([0, 1, 2])
+    D = torch.sparse.spdiags(diags_data, diags_index,
+                             (signal_length - 2, signal_length)).to_dense().to(source_device)
+    detrended_signal = torch.matmul(
+        (H - torch.linalg.inv(H + (lambda_value ** 2) * torch.matmul(D.T, D))), input_signal)
+    return detrended_signal.cpu().numpy()
 
 
 def _calculate_fft_hr(ppg_signal, fs=60, low_pass=0.75, high_pass=2.5):
@@ -46,7 +50,7 @@ def _calculate_peak_hr(ppg_signal, fs):
 def calculate_hr_per_video(predictions, fs=30, diff_flag=True, use_bandpass=True, hr_method='FFT'):
     """Calculate video-level HR"""
     if diff_flag:  # if the predictions and labels are 1st derivative of PPG signal.
-        predictions = _detrend(np.cumsum(predictions), 100)
+        predictions = _detrend(torch.cumsum(predictions, dim=0), 100)
     else:
         predictions = _detrend(predictions, 100)
     if use_bandpass:

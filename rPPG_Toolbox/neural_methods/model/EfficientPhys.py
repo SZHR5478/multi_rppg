@@ -157,14 +157,14 @@ class EfficientPhys(nn.Module):
 
     def predict(self, frames):
         """Calculate rPPG HR."""
-        frames = preprocess(torch.tensor(np.array(frames), dtype=torch.float, device=self.device))
-        frames = frames[-(len(frames) // self.frame_depth * self.frame_depth):]
-        frames = torch.concatenate([frames, frames[-1:, :, :, :]], axis=0).contiguous()
-        # frames = torch.from_numpy(frames).contiguous().to(self.device)
         with torch.no_grad():
+            frames = preprocess(torch.tensor(np.array(frames), dtype=torch.float, device=self.device))
+            frames = frames[-(len(frames) // self.frame_depth * self.frame_depth):]
+            frames = torch.concatenate([frames, frames[-1:, :, :, :]], axis=0).contiguous()
+            # frames = torch.from_numpy(frames).contiguous().to(self.device)
             predictions = self(frames)
-        predictions = np.squeeze(predictions.cpu().numpy())
-        if self.method == "peak":
-            return calculate_hr_per_video(predictions, fs=self.fs, hr_method='Peak')
-        else:
-            return calculate_hr_per_video(predictions, fs=self.fs, hr_method='FFT')
+            predictions = torch.squeeze(predictions)
+            if self.method == "peak":
+                return calculate_hr_per_video(predictions, fs=self.fs, hr_method='Peak')
+            else:
+                return calculate_hr_per_video(predictions, fs=self.fs, hr_method='FFT')
