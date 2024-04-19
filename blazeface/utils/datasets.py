@@ -164,7 +164,7 @@ class LoadStreams:  # multiple IP or RTSP cameras
             self.fps[i] = max((fps if math.isfinite(fps) else 0) % 100, 0) or 30  # 30 FPS fallback
 
             _, self.imgs[i] = cap.read()  # guarantee first frame
-            self.thread[i] = Thread(target=self.update, args=([i, cap, s]), daemon=True)
+            self.threads[i] = Thread(target=self.update, args=([i, cap, s]), daemon=True)
             print(f"{st} Success ({self.frames[i]} frames {w}x{h} at {self.fps[i]:.2f} FPS)")
             self.threads[i].start()
         print('')  # newline
