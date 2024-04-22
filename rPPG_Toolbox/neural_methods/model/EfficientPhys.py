@@ -160,7 +160,7 @@ class EfficientPhys(nn.Module):
         with torch.no_grad():
             frames = preprocess(torch.tensor(np.array(frames), dtype=torch.float, device=self.device))
             frames = frames[-(len(frames) // self.frame_depth * self.frame_depth):]
-            frames = torch.concatenate([frames, frames[-1:, :, :, :]], axis=0).contiguous()
+            frames = torch.cat([frames, frames[-1:, :, :, :]], axis=0).contiguous()
             # frames = torch.from_numpy(frames).contiguous().to(self.device)
             predictions = self(frames)
             predictions = torch.squeeze(predictions)
