@@ -2,8 +2,7 @@ torch
 torchvision
 torchaudio
 opencv-python
-onnx
-onnxruntime
+matplotlib
 
 #deepsort
 gdown

@@ -5,6 +5,7 @@ Plotting utils
 import cv2
 import numpy as np
 
+
 class Colors:
     # Ultralytics color palette https://ultralytics.com/
     def __init__(self):
@@ -24,6 +25,7 @@ class Colors:
 
 
 colors = Colors()
+
 
 class Annotator:
 
@@ -58,13 +60,3 @@ class Annotator:
     def result(self):
         # Return annotated image as array
         return np.asarray(self.im)
-
-
-
-
-
-
-
-
-
-
