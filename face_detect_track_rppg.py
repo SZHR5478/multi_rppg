@@ -13,7 +13,7 @@ import torch
 from blazeface.utils.datasets import LoadImages, LoadStreams, IMG_FORMATS, VID_FORMATS
 from blazeface.utils.general import check_img_size, non_max_suppression_face, scale_coords, check_imshow, xyxy2xywh, \
     increment_path
-from blazeface.utils.onnx_utils import select_device, load_onnx_model
+from blazeface.utils.torch_utils import select_device, load_model
 from blazeface.utils.plots import Annotator
 from deep_sort.utils.parser import get_config
 from deep_sort.deep_sort import DeepSort
@@ -35,11 +35,12 @@ def detect(opt):
 
     face_crop_height, face_crop_width = opt.face_crop_size
 
-    # Load blazeface model
-    model = load_onnx_model(opt.blazeface_model, select_device(opt.device))
+    device = select_device(opt.device)
+
+    # Load face model
+    face_model = load_model(weights=opt.blazeface_model, device=device)
 
     # Load EfficientPhys model
-    device = select_device(opt.device, is_onnx=False)
     rPPG_model = EfficientPhys(frame_depth=opt.frame_depth, img_size=face_crop_height, method=opt.method, fs=opt.FS,
                                device=device)
     rPPG_model.load_state_dict(torch.load(opt.EfficientPhys_model))
@@ -77,7 +78,7 @@ def detect(opt):
         deepsort_list.append(
             DeepSort(
                 opt.deep_sort_model,
-                opt.device,
+                device,
                 opt.FS * opt.WINDOW_SIZE,
                 max_dist=cfg.DEEPSORT.MAX_DIST,
                 max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
@@ -92,14 +93,16 @@ def detect(opt):
 
     # Run tracking
     for frame_idx, (path, im, im0s, vid_cap, s) in enumerate(dataset):
-        im = im.astype('float32')
+        im = torch.from_numpy(im).to(device).float()  # uint8 to fp16/32
         im /= 255.0  # 0 - 255 to 0.0 - 1.0
-        im = im[::-1, ...]  # RGB to BGR
         if len(im.shape) == 3:
+            im = im[[2, 1, 0], ...]  # RGB to BGR
             im = im[None]  # expand for batch dim
+        else:
+            im = im[:, [2, 1, 0], ...]
 
         # Inference
-        pred = model.run([model.get_outputs()[0].name], {model.get_inputs()[0].name: im})[0]
+        pred = face_model(im)[0]
 
         # Apply NMS
         pred = non_max_suppression_face(pred, opt.conf_thres, opt.iou_thres)
@@ -132,7 +135,7 @@ def detect(opt):
 
                 xywhs = xyxy2xywh(det[:, :4])
                 confs = det[:, 4]
-                clss = det[:, 15]
+                clss = det[:, 15].cpu()
 
                 # pass detections to deepsort
                 outputs[i] = deepsort_list[i].update(xywhs, confs, clss, im0)
@@ -160,7 +163,7 @@ def detect(opt):
             im0 = annotator.result()
 
             if opt.show_vid:
-                cv2.imshow(str(p), im0)
+                cv2.imshow(str(p).encode("gbk").decode(errors="ignore"), im0)
                 cv2.waitKey(1)  # 1 millisecond
 
             # Save results (image with detections)
@@ -182,8 +185,8 @@ def detect(opt):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--blazeface_model', type=str, default='weights/blazeface.onnx',
-                        help='blazeface_model.onnx path(s)')
+    parser.add_argument('--blazeface_model', type=str, default='weights/yolov5-blazeface.pt',
+                        help='blazeface_model.pt path(s)')
     parser.add_argument('--max-stride', type=int, default=16, help='blazeface model max stride')
     parser.add_argument('--deep_sort_model', type=str, default='weights/osnet_x0_5_market1501.pth')
     parser.add_argument('--EfficientPhys_model', type=str, default='weights/UBFC-rPPG_EfficientPhys.pth')
