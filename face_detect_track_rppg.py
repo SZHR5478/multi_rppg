@@ -2,7 +2,6 @@
 import sys
 
 sys.path.insert(0, './blazeface')
-sys.path.insert(0, './rPPG_Toolbox')
 
 import argparse
 import os
@@ -17,7 +16,6 @@ from blazeface.utils.torch_utils import select_device, load_model
 from blazeface.utils.plots import Annotator
 from deep_sort.utils.parser import get_config
 from deep_sort.deep_sort import DeepSort
-from rPPG_Toolbox.neural_methods.model.EfficientPhys import EfficientPhys
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # blazeface deepsort root directory
@@ -40,20 +38,13 @@ def detect(opt):
     # Load face model
     face_model = load_model(weights=opt.blazeface_model, device=device)
 
-    # Load EfficientPhys model
-    rPPG_model = EfficientPhys(frame_depth=opt.frame_depth, img_size=face_crop_height, method=opt.method, fs=opt.FS,
-                               device=device)
-    rPPG_model.load_state_dict(torch.load(opt.EfficientPhys_model))
-    rPPG_model.to(device)
-    rPPG_model.eval()
-
     # Half
     opt.half &= opt.device.lower() != 'cpu'  # half precision only supported on CUDA
 
     opt.show_vid &= check_imshow()
 
     exp_name = opt.blazeface_model.split('/')[-1].split('.')[0] + "_" + opt.deep_sort_model.split('/')[-1].split('.')[
-        0] + "_" + opt.EfficientPhys_model.split('/')[-1].split('.')[0]
+        0]
     save_dir = increment_path(Path(opt.project) / exp_name,
                               exist_ok=opt.exist_ok)  # increment run if project name exists
     save_dir.mkdir(parents=True, exist_ok=True)  # make dir
@@ -79,7 +70,6 @@ def detect(opt):
             DeepSort(
                 opt.deep_sort_model,
                 device,
-                opt.FS * opt.WINDOW_SIZE,
                 max_dist=cfg.DEEPSORT.MAX_DIST,
                 max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
                 max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT,
@@ -142,14 +132,16 @@ def detect(opt):
 
                 if len(outputs[i]) > 0:
                     for output in outputs[i]:
-                        [x1, y1, x2, y2, id, _], conf, images = output
+                        [x1, y1, x2, y2, id, _], conf, face_image, face_crop_image = output
                         label = f'id:{id}  conf:{conf:.2f}'
-                        if len(images) <= 9:
-                            print(
-                                f"Window frame size of {len(images)} is smaller than minimum pad length of 9. Window ignored!")
-                        else:
-                            hr = rPPG_model.predict(images)
-                            label += f'  hr:{hr:.2f}'
+
+                        if opt.save_img:
+                            face_img_save_dir = Path(save_path) / 'face_images'/ f'track_{id}'
+                            crop_face_img_save_dir = Path(save_path) / 'crop_face_images'/ f'track_{id}'
+                            face_img_save_dir.mkdir(parents=True, exist_ok=True)
+                            crop_face_img_save_dir.mkdir(parents=True, exist_ok=True)
+                            cv2.imwrite(str(face_img_save_dir / f'{frame_idx}.png'), face_image)
+                            cv2.imwrite(str(crop_face_img_save_dir / f'{frame_idx}.png'), face_crop_image)
 
                         if opt.save_vid or opt.show_vid:  # Add bbox to image
                             annotator.box_label([x1, y1, x2, y2], label)
@@ -189,23 +181,19 @@ if __name__ == '__main__':
                         help='blazeface_model.pt path(s)')
     parser.add_argument('--max-stride', type=int, default=16, help='blazeface model max stride')
     parser.add_argument('--deep_sort_model', type=str, default='weights/osnet_x0_5_market1501.pth')
-    parser.add_argument('--EfficientPhys_model', type=str, default='weights/UBFC-rPPG_EfficientPhys.pth')
-    parser.add_argument('--frame_depth', type=int, default=10, help='frame depth')
-    parser.add_argument('--method', type=str, default='FFT', help='rPPG inference method, i.e. FFT or peak')
     parser.add_argument('--use_larger_box', action='store_true', default=False)
     parser.add_argument('--larger_box_coef', type=float, default=1.5)
     parser.add_argument('--face_crop_size', nargs='+', type=int, default=[72, 72],
-                        help='face rPPG inference size h,w')  # height, width
-    parser.add_argument('--FS', type=int, default=30)
-    parser.add_argument('--WINDOW_SIZE', type=int, default=10, help='In seconds')
+                        help='face crop size h,w')  # height, width
     parser.add_argument('--source', type=str, default='0', help='source')  # file/folder, 0 for webcam
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640],
                         help='face detect inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.6, help='face inference conf threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='face IOU threshold for NMS')
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. cpu or cuda')
-    parser.add_argument('--show-vid', action='store_true', help='display rPPG video results')
-    parser.add_argument('--save-vid', action='store_true', help='save video rPPG results')
+    parser.add_argument('--show-vid', action='store_true', help='display face track video results')
+    parser.add_argument('--save-vid', action='store_true', help='save video face tracks results')
+    parser.add_argument('--save-img', action='store_true', help='save raw and crop face tracks images')
     parser.add_argument("--config_deepsort", type=str, default="deep_sort/configs/deep_sort.yaml")
     parser.add_argument("--half", action="store_true", default=False, help="use FP16 half-precision inference")
     parser.add_argument('--project', default=ROOT / 'runs/detect', help='save results to project/name')
