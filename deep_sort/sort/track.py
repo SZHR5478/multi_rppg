@@ -64,8 +64,8 @@ class Track:
 
     """
 
-    def __init__(self, total_window_size, mean, covariance, track_id, class_id, n_init, max_age, conf,
-                 feature=None, image=None):
+    def __init__(self, mean, covariance, track_id, class_id, n_init, max_age, conf,
+                 feature=None):
         self.mean = mean
         self.covariance = covariance
         self.track_id = track_id
@@ -78,11 +78,10 @@ class Track:
         self.state = TrackState.Tentative
         self.conf = conf
         self.features = []
-        self.images = deque(maxlen=total_window_size)
+        self.face_image = None
+        self.face_crop_image = None
         if feature is not None:
             self.features.append(feature)
-        if image is not None:
-            self.images.append(image)
         self._n_init = n_init
         self._max_age = max_age
 

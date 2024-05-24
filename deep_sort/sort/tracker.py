@@ -37,8 +37,7 @@ class Tracker:
     """
     GATING_THRESHOLD = np.sqrt(kalman_filter.chi2inv95[4])
 
-    def __init__(self, total_window_size, metric, max_iou_distance=0.9, max_age=30, n_init=3, _lambda=0):
-        self.total_window_size = total_window_size
+    def __init__(self, metric, max_iou_distance=0.9, max_age=30, n_init=3, _lambda=0):
         self.metric = metric
         self.max_iou_distance = max_iou_distance
         self.max_age = max_age
@@ -168,6 +167,6 @@ class Tracker:
     def _initiate_track(self, detection, class_id):
         mean, covariance = self.kf.initiate(detection.to_xyah())
         self.tracks.append(Track(
-            self.total_window_size, mean, covariance, self._next_id, class_id, self.n_init, self.max_age,
+            mean, covariance, self._next_id, class_id, self.n_init, self.max_age,
             detection.confidence, detection.feature))
         self._next_id += 1
