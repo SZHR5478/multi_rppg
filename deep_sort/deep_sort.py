@@ -21,7 +21,7 @@ __all__ = ['DeepSort']
 
 
 class DeepSort(object):
-    def __init__(self, model, device, total_window_size, max_dist=0.2, max_iou_distance=0.7, max_age=70, n_init=3,
+    def __init__(self, model, device, max_dist=0.2, max_iou_distance=0.7, max_age=70, n_init=3,
                  nn_budget=100, width=72, height=72, use_larger_box=False, larger_box_coef=1.0):
         self.crop_width, self.crop_height, self.use_larger_box, self.larger_box_coef = width, height, use_larger_box, larger_box_coef
 
@@ -55,7 +55,7 @@ class DeepSort(object):
         metric = NearestNeighborDistanceMetric(
             "euclidean", max_cosine_distance, nn_budget)
         self.tracker = Tracker(
-            total_window_size, metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
+            metric, max_iou_distance=max_iou_distance, max_age=max_age, n_init=n_init)
 
     def update(self, bbox_xywh, confidences, classes, ori_img, use_yolo_preds=False):
         self.height, self.width = ori_img.shape[:2]
@@ -91,12 +91,10 @@ class DeepSort(object):
                 face_box_coor[3] = self.larger_box_coef * face_box_coor[3]
             face_box_coor = self._tlwh_to_xyxy(face_box_coor)
 
-            face_region = cv2.resize(ori_img[face_box_coor[1]:face_box_coor[3], face_box_coor[0]:face_box_coor[2]],
-                                     (self.crop_width, self.crop_height), interpolation=cv2.INTER_AREA)
-            face_region = cv2.cvtColor(face_region, cv2.COLOR_BGR2RGB)
-            track.images.append(face_region)
+            track.face_image = ori_img[face_box_coor[1]:face_box_coor[3], face_box_coor[0]:face_box_coor[2]]
+            track.face_crop_image = cv2.resize(track.face_image,(self.crop_width, self.crop_height), interpolation=cv2.INTER_AREA)
 
-            outputs.append([np.array([x1, y1, x2, y2, track_id, class_id], dtype='int'), track.conf, track.images])
+            outputs.append([np.array([x1, y1, x2, y2, track_id, class_id], dtype='int'), track.conf, track.face_image, track.face_crop_image])
         return outputs
 
     """
