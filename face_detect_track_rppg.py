@@ -136,11 +136,11 @@ def detect(opt):
                         label = f'id:{id}  conf:{conf:.2f}'
 
                         if opt.save_img:
-                            face_img_save_dir = Path(save_path) / 'face_images'/ f'track_{id}'
+                            # face_img_save_dir = Path(save_path) / 'face_images'/ f'track_{id}'
                             crop_face_img_save_dir = Path(save_path) / 'crop_face_images'/ f'track_{id}'
-                            face_img_save_dir.mkdir(parents=True, exist_ok=True)
+                            # face_img_save_dir.mkdir(parents=True, exist_ok=True)
                             crop_face_img_save_dir.mkdir(parents=True, exist_ok=True)
-                            cv2.imwrite(str(face_img_save_dir / f'{frame_idx}.png'), face_image)
+                            # cv2.imwrite(str(face_img_save_dir / f'{frame_idx}.png'), face_image)
                             cv2.imwrite(str(crop_face_img_save_dir / f'{frame_idx}.png'), face_crop_image)
 
                         if opt.save_vid or opt.show_vid:  # Add bbox to image
