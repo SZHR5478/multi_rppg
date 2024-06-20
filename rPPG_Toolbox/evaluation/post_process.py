@@ -47,8 +47,9 @@ def _calculate_peak_hr(ppg_signal, fs):
     return hr_peak
 
 
-def calculate_hr_per_video(predictions, fs=30, diff_flag=True, use_bandpass=True, hr_method='FFT'):
+def calculate_hr_per_video(predictions, fs=30, diff_flag=True, use_bandpass=True, hr_method='FFT', low_hr = 45, high_hr = 150):
     """Calculate video-level HR"""
+    low_pass, high_pass = low_hr / 60, high_hr / 60
     if diff_flag:  # if the predictions and labels are 1st derivative of PPG signal.
         predictions = _detrend(torch.cumsum(predictions, dim=0), 100)
     else:
@@ -56,10 +57,10 @@ def calculate_hr_per_video(predictions, fs=30, diff_flag=True, use_bandpass=True
     if use_bandpass:
         # bandpass filter between [0.75, 2.5] Hz
         # equals [45, 150] beats per min
-        [b, a] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
+        [b, a] = butter(1, [low_pass / fs * 2, high_pass / fs * 2], btype='bandpass')
         predictions = scipy.signal.filtfilt(b, a, np.double(predictions))
     if hr_method == 'FFT':
-        hr_pred = _calculate_fft_hr(predictions, fs=fs)
+        hr_pred = _calculate_fft_hr(predictions, fs=fs, low_pass=low_pass, high_pass=high_pass)
     elif hr_method == 'Peak':
         hr_pred = _calculate_peak_hr(predictions, fs=fs)
     else:

@@ -21,9 +21,7 @@ def preprocess(frames):
 
 def standardized_data(data):
     """Z-score standardization for video data."""
-    data = data - data.mean()
-    data = data / data.std()
-    data[torch.isnan(data)] = 0
+    data = data / 255.0
     return data
 
 
@@ -64,12 +62,14 @@ class TSM(nn.Module):
 class EfficientPhys(nn.Module):
     def __init__(self, device, in_channels=3, nb_filters1=32, nb_filters2=64, kernel_size=3, dropout_rate1=0.25,
                  dropout_rate2=0.5, pool_size=(2, 2), nb_dense=128, frame_depth=20, img_size=36, channel='raw',
-                 method="fft", fs=30):
+                 method="fft", fs=30, low_hr = 45, high_hr = 150):
         super(EfficientPhys, self).__init__()
 
         self.method = method.lower()
         assert self.method in ["peak", "fft"], "Inference evaluation method name wrong!"
         self.fs = fs
+        self.low_hr = low_hr
+        self.high_hr = high_hr
         self.device = device
 
         self.in_channels = in_channels
@@ -158,13 +158,12 @@ class EfficientPhys(nn.Module):
     def predict(self, frames):
         """Calculate rPPG HR."""
         with torch.no_grad():
-            frames = preprocess(torch.tensor(np.array(frames), dtype=torch.float, device=self.device))
+            frames = preprocess(torch.tensor(np.array(frames), dtype=torch.float64, device=self.device))
             frames = frames[-(len(frames) // self.frame_depth * self.frame_depth):]
-            frames = torch.cat([frames, frames[-1:, :, :, :]], axis=0).contiguous()
-            # frames = torch.from_numpy(frames).contiguous().to(self.device)
+            frames = torch.cat([frames, frames[-1:, :, :, :]], axis=0).contiguous().to(torch.float32)
             predictions = self(frames)
             predictions = torch.squeeze(predictions)
             if self.method == "peak":
-                return calculate_hr_per_video(predictions, fs=self.fs, hr_method='Peak')
+                return calculate_hr_per_video(predictions, fs=self.fs, hr_method='Peak', low_hr=self.low_hr, high_hr=self.high_hr)
             else:
-                return calculate_hr_per_video(predictions, fs=self.fs, hr_method='FFT')
+                return calculate_hr_per_video(predictions, fs=self.fs, hr_method='FFT', low_hr=self.low_hr, high_hr=self.high_hr)

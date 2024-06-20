@@ -42,7 +42,7 @@ def detect(opt):
 
     # Load EfficientPhys model
     rPPG_model = EfficientPhys(frame_depth=opt.frame_depth, img_size=face_crop_height, method=opt.method, fs=opt.FS,
-                               device=device)
+                               low_hr = opt.low_hr_thres, high_hr = opt.high_hr_thres,device=device)
     rPPG_model.load_state_dict(torch.load(opt.EfficientPhys_model))
     rPPG_model.to(device)
     rPPG_model.eval()
@@ -144,9 +144,9 @@ def detect(opt):
                     for output in outputs[i]:
                         [x1, y1, x2, y2, id, _], conf, images = output
                         label = f'id:{id}  conf:{conf:.2f}'
-                        if len(images) <= 9:
+                        if len(images) != images.maxlen:
                             print(
-                                f"Window frame size of {len(images)} is smaller than minimum pad length of 9. Window ignored!")
+                                f"Window frame size of {len(images)} is smaller than minimum pad length of {images.maxlen}. Window ignored!")
                         else:
                             hr = rPPG_model.predict(images)
                             label += f'  hr:{hr:.2f}'
@@ -189,7 +189,7 @@ if __name__ == '__main__':
                         help='blazeface_model.pt path(s)')
     parser.add_argument('--max-stride', type=int, default=16, help='blazeface model max stride')
     parser.add_argument('--deep_sort_model', type=str, default='weights/osnet_x0_5_market1501.pth')
-    parser.add_argument('--EfficientPhys_model', type=str, default='weights/UBFC-rPPG_EfficientPhys.pth')
+    parser.add_argument('--EfficientPhys_model', type=str, default='weights/SELF_SELF_SELF_efficientphys_Epoch(BEST)63.pth')
     parser.add_argument('--frame_depth', type=int, default=10, help='frame depth')
     parser.add_argument('--method', type=str, default='FFT', help='rPPG inference method, i.e. FFT or peak')
     parser.add_argument('--use_larger_box', action='store_true', default=False)
@@ -203,6 +203,8 @@ if __name__ == '__main__':
                         help='face detect inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.6, help='face inference conf threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='face IOU threshold for NMS')
+    parser.add_argument('--low_hr_thres', type=float, default=45, help='rPPG hr inference low threshold, i.e. 45')
+    parser.add_argument('--high_hr_thres', type=float, default=150, help='rPPG hr inference high threshold, i.e. 150')
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. cpu or cuda')
     parser.add_argument('--show-vid', action='store_true', help='display rPPG video results')
     parser.add_argument('--save-vid', action='store_true', help='save video rPPG results')
