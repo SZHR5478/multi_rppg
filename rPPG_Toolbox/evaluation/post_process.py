@@ -47,7 +47,8 @@ def _calculate_peak_hr(ppg_signal, fs):
     return hr_peak
 
 
-def calculate_hr_per_video(predictions, fs=30, diff_flag=True, use_bandpass=True, hr_method='FFT', low_hr = 45, high_hr = 150):
+def calculate_hr_per_video(predictions, fs=30, diff_flag=True, use_bandpass=True, hr_method='FFT', low_hr=45,
+                           high_hr=150):
     """Calculate video-level HR"""
     low_pass, high_pass = low_hr / 60, high_hr / 60
     if diff_flag:  # if the predictions and labels are 1st derivative of PPG signal.
@@ -65,4 +66,4 @@ def calculate_hr_per_video(predictions, fs=30, diff_flag=True, use_bandpass=True
         hr_pred = _calculate_peak_hr(predictions, fs=fs)
     else:
         raise ValueError('Please use FFT or Peak to calculate your HR.')
-    return hr_pred
+    return predictions, hr_pred
