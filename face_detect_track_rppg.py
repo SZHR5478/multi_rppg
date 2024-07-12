@@ -220,7 +220,7 @@ if __name__ == '__main__':
     parser.add_argument('--FS', type=int, default=30)
     parser.add_argument('--WINDOW_SIZE', type=int, default=10, help='In seconds')
     parser.add_argument('--source', type=str, default='0', help='source')  # file/folder, 0 for webcam
-    parser.add_argument('--use_ros', type=bool, default=False, help='whether to use ros topic as input')
+    parser.add_argument('--use_ros', action='store_true', help='whether to use ros topic as input')
     parser.add_argument('--ros_node_name', type=str, default=None, help='create a ros node with the specified name')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640],
                         help='face detect inference size h,w')
