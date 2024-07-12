@@ -1,26 +1,28 @@
 import glob
 import math
 import os
+import argparse
+import re
 import time
 from pathlib import Path
 from threading import Thread
-
+import rospy
 import cv2
 import numpy as np
-
-import rospy
-from cv_bridge import CvBridge
-from rostopic import get_topic_type
-from sensor_msgs.msg import Image, CompressedImage
-
-from blazeface.utils.general import clean_str
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge, CvBridgeError
 
 IMG_FORMATS = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng']  # acceptable image suffixes
 VID_FORMATS = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
 
 
+def clean_str(s):
+    # Cleans a string by replacing special characters with underscore _
+    return re.sub(pattern="[|@#!¡·$€%&()=?¿^*;:,¨´><+]", repl="_", string=s)
+
+
 class LoadImages:  # for inference
-    def __init__(self, path, img_size=640, stride=32, auto=True):
+    def __init__(self, path):
         p = str(Path(path).resolve())  # os-agnostic absolute path
         if '*' in p:
             files = sorted(glob.glob(p, recursive=True))  # glob
@@ -35,13 +37,10 @@ class LoadImages:  # for inference
         videos = [x for x in files if x.split('.')[-1].lower() in VID_FORMATS]
         ni, nv = len(images), len(videos)
 
-        self.img_size = img_size
-        self.stride = stride
         self.files = images + videos
         self.nf = ni + nv  # number of files
         self.video_flag = [False] * ni + [True] * nv
         self.mode = 'image'
-        self.auto = auto
         if any(videos):
             self.new_video(videos[0])  # new video
         else:
@@ -73,24 +72,14 @@ class LoadImages:  # for inference
                     ret_val, img0 = self.cap.read()
 
             self.frame += 1
-            s = f'video {self.count + 1}/{self.nf} ({self.frame}/{self.frames}) {path}: '
 
         else:
             # Read image
             self.count += 1
             img0 = cv2.imread(path)  # BGR
             assert img0 is not None, 'Image Not Found ' + path
-            s = f'image {self.count}/{self.nf} {path}: '
-            path = str(Path(path).parent)
 
-        # Padded resize
-        img = letterbox(img0, new_shape=self.img_size, stride=self.stride, auto=self.auto)[0]
-
-        # Convert
-        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
-        img = np.ascontiguousarray(img)
-
-        return path, img, img0, self.cap, s
+        return img0
 
     def new_video(self, path):
         self.frame = 0
@@ -102,10 +91,8 @@ class LoadImages:  # for inference
 
 
 class LoadStreams:  # multiple IP or RTSP cameras
-    def __init__(self, sources='streams.txt', img_size=640, stride=32, auto=True):
+    def __init__(self, sources='streams.txt'):
         self.mode = 'stream'
-        self.img_size = img_size
-        self.stride = stride
 
         if os.path.isfile(sources):
             with open(sources, 'r') as f:
@@ -116,7 +103,6 @@ class LoadStreams:  # multiple IP or RTSP cameras
         n = len(sources)
         self.imgs, self.fps, self.frames, self.threads = [None] * n, [0] * n, [0] * n, [None] * n
         self.sources = [clean_str(x) for x in sources]  # clean source names for later
-        self.auto = auto
         for i, s in enumerate(sources):
             # Start the thread to read frames from the video stream
             st = f'{i + 1}/{n}: {s}... '
@@ -136,7 +122,7 @@ class LoadStreams:  # multiple IP or RTSP cameras
 
         # check for common shapes
         s = np.stack(
-            [letterbox(x, new_shape=self.img_size, stride=self.stride, auto=self.auto)[0].shape for x in self.imgs],
+            self.imgs,
             0)  # inference shapes
         self.rect = np.unique(s, axis=0).shape[0] == 1  # rect inference if all shapes equal
         if not self.rect:
@@ -171,100 +157,45 @@ class LoadStreams:  # multiple IP or RTSP cameras
 
         # Letterbox
         img0 = self.imgs.copy()
-        img = [letterbox(x, new_shape=self.img_size, auto=self.rect and self.auto)[0] for x in img0]
-
-        # Stack
-        img = np.stack(img, 0)
-
-        # Convert
-        img = img[:, :, :, ::-1].transpose(0, 3, 1, 2)  # BGR to RGB, BHWC to BCHW
-        img = np.ascontiguousarray(img)
-
-        return self.sources, img, img0, None, ''
+        return img0[0]
 
     def __len__(self):
         return len(self.sources)  # 1E12 frames = 32 streams at 30 FPS for 30 years
 
 
-class ROSLoadImages:  # for inference
-    def __init__(self, input_image_topic, img_size=640, stride=32, auto=True, ros_node_name=None):
-        if ros_node_name is not None:
-            rospy.init_node(ros_node_name)
-        else:
-            rospy.init_node('ROSLoadImages', anonymous=True)
-        self.image = None
-        self.input_image_topic = input_image_topic
-        # Initialize CV_Bridge
-        self.bridge = CvBridge()
+def image_publisher(opt):
+    is_file = Path(opt.source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
+    is_url = opt.source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
+    webcam = opt.source.isnumeric() or opt.source.endswith('.txt') or (is_url and not is_file)
 
-        # Initialize subscriber to Image/CompressedImage topic
-        input_image_type, input_image_topic, _ = get_topic_type(self.input_image_topic, blocking=True)
-        self.compressed_input = input_image_type == "sensor_msgs/CompressedImage"
+    if webcam:
+        print('loading streams:', opt.source)
+        dataset = LoadStreams(opt.source)
+    else:
+        dataset = LoadImages(opt.source)
 
-        if self.compressed_input:
-            self.image_sub = rospy.Subscriber(
-                input_image_topic, CompressedImage, self.callback, queue_size=1
-            )
-        else:
-            self.image_sub = rospy.Subscriber(
-                input_image_topic, Image, self.callback, queue_size=1
-            )
+    if opt.ros_node_name is not None:
+        rospy.init_node(opt.ros_node_name)
+    else:
+        rospy.init_node('ROSPublishImages', anonymous=True)
 
-        self.img_size = img_size
-        self.stride = stride
-        self.auto = auto
+    pub = rospy.Publisher('pub_images' if opt.pub_image_topic_name is None else opt.pub_image_topic_name, Image,
+                          queue_size=1000)
 
-    def callback(self, data):
-        if self.compressed_input:
-            self.image = self.bridge.compressed_imgmsg_to_cv2(data, desired_encoding="bgr8")
-        else:
-            self.image = self.bridge.imgmsg_to_cv2(data, desired_encoding="bgr8")
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        while (self.image is None):
-            pass
-        img0 = self.image.copy()
-        # Padded resize
-        img = letterbox(img0, new_shape=self.img_size, stride=self.stride, auto=self.auto)[0]
-
-        # Convert
-        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
-        img = np.ascontiguousarray(img)
-
-        return self.input_image_topic, img, img0, None, ''
+    # Initialize CV_Bridge
+    bridge = CvBridge()
+    rate = rospy.Rate(60)
+    for frame_idx, im in enumerate(dataset):
+        image_message = bridge.cv2_to_imgmsg(im, encoding="bgr8")
+        pub.publish(image_message)
+        print(frame_idx)
+        rate.sleep()
 
 
-def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32):
-    # Resize and pad image while meeting stride-multiple constraints
-    shape = img.shape[:2]  # current shape [height, width]
-    if isinstance(new_shape, int):
-        new_shape = (new_shape, new_shape)
-
-    # Scale ratio (new / old)
-    r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-    if not scaleup:  # only scale down, do not scale up (for better test mAP)
-        r = min(r, 1.0)
-
-    # Compute padding
-    ratio = r, r  # width, height ratios
-    new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
-    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
-    if auto:  # minimum rectangle
-        dw, dh = np.mod(dw, stride), np.mod(dh, stride)  # wh padding
-    elif scaleFill:  # stretch
-        dw, dh = 0.0, 0.0
-        new_unpad = (new_shape[1], new_shape[0])
-        ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
-
-    dw /= 2  # divide padding into 2 sides
-    dh /= 2
-
-    if shape[::-1] != new_unpad:  # resize
-        img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
-    return img, ratio, (dw, dh)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--source', type=str, default='0', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--ros_node_name', type=str, default=None, help='create a ros node with the specified name')
+    parser.add_argument('--pub_image_topic_name', type=str, default=None)
+    opt = parser.parse_args()
+    image_publisher(opt)

@@ -9,3 +9,7 @@ scipy
 tensorboard
 PyYAML
 easydict
+
+rospkg
+rospy
+catkin_tools

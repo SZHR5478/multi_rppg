@@ -11,7 +11,7 @@ import pandas as pd
 import cv2
 import torch
 
-from blazeface.utils.datasets import LoadImages, LoadStreams, IMG_FORMATS, VID_FORMATS
+from blazeface.utils.datasets import LoadImages, LoadStreams, ROSLoadImages, IMG_FORMATS, VID_FORMATS
 from blazeface.utils.general import check_img_size, non_max_suppression_face, scale_coords, check_imshow, xyxy2xywh, \
     increment_path
 from blazeface.utils.torch_utils import select_device, load_model
@@ -28,6 +28,7 @@ ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
 
 def detect(opt):
+    is_ros = opt.use_ros
     is_file = Path(opt.source).suffix[1:] in (IMG_FORMATS + VID_FORMATS)
     is_url = opt.source.lower().startswith(('rtsp://', 'rtmp://', 'http://', 'https://'))
     webcam = opt.source.isnumeric() or opt.source.endswith('.txt') or (is_url and not is_file)
@@ -60,7 +61,11 @@ def detect(opt):
     save_dir.mkdir(parents=True, exist_ok=True)  # make dir
 
     # Dataloader
-    if webcam:
+    if is_ros:
+        print('subscribing the  image topic:', opt.source)
+        dataset = ROSLoadImages(opt.source, img_size=imgsz, stride=opt.max_stride, ros_node_name=opt.ros_node_name)
+        nr_sources = 1
+    elif webcam:
         print('loading streams:', opt.source)
         dataset = LoadStreams(opt.source, img_size=imgsz, stride=opt.max_stride)
         nr_sources = len(dataset)
@@ -215,6 +220,8 @@ if __name__ == '__main__':
     parser.add_argument('--FS', type=int, default=30)
     parser.add_argument('--WINDOW_SIZE', type=int, default=10, help='In seconds')
     parser.add_argument('--source', type=str, default='0', help='source')  # file/folder, 0 for webcam
+    parser.add_argument('--use_ros', type=bool, default=False, help='whether to use ros topic as input')
+    parser.add_argument('--ros_node_name', type=str, default=None, help='create a ros node with the specified name')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640],
                         help='face detect inference size h,w')
     parser.add_argument('--conf-thres', type=float, default=0.6, help='face inference conf threshold')
